@@ -1,7 +1,9 @@
 const Campground = require('../models/campground')
+const { cloudinary } = require('../cloudinary')
 
 module.exports.index = async (req, res) => {
   const campgrounds = await Campground.find({})
+
   res.render('campgrounds/index', { campgrounds })
 }
 
@@ -12,9 +14,18 @@ module.exports.newCamp = (req, res) => {
 module.exports.createCampground = async (req, res, next) => {
   if (!req.body.campground)
     throw new ExpressError('Invalid Campground Data', 400)
+
   const campground = new Campground(req.body.campground)
+
+  campground.images = req.files.map((fi) => ({
+    url: fi.path,
+    filename: fi.filename,
+  }))
+
   campground.author = req.user._id
   await campground.save()
+
+  // console.log(campground)
   req.flash('success', 'New Campground made successfully')
   res.redirect(`/campgrounds/${campground._id}`)
 }
@@ -28,15 +39,18 @@ module.exports.showCampground = async (req, res) => {
     req.flash('error', `Couldn't find that campground`)
     return res.redirect('/campgrounds')
   }
+
   res.render('campgrounds/show', { campground })
 }
 
 module.exports.editCampground = async (req, res) => {
   const campground = await Campground.findById(req.params.id)
+
   if (!campground) {
     req.flash('error', `Couldn't find that campground`)
     return res.redirect('/campgrounds')
   }
+
   res.render('campgrounds/edit', { campground })
 }
 
@@ -46,13 +60,34 @@ module.exports.updateCampground = async (req, res) => {
   const campground = await Campground.findByIdAndUpdate(id, {
     ...req.body.campground,
   })
+
+  const imgs = req.files.map((fi) => ({
+    url: fi.path,
+    filename: fi.filename,
+  }))
+
+  campground.images.push(...imgs)
+
+  await campground.save()
+
+  if (req.body.deleteImages) {
+    for (let filename of req.body.deleteImages) {
+      await cloudinary.uploader.destroy(filename)
+    }
+    await campground.updateOne({
+      $pull: { images: { filename: { $in: req.body.deleteImages } } },
+    })
+  }
+
   req.flash('success', 'Updated Campground successfully')
   res.redirect(`/campgrounds/${campground._id}`)
 }
 
 module.exports.deleteCampground = async (req, res) => {
   const { id } = req.params
+
   await Campground.findByIdAndDelete(id)
+
   req.flash('success', 'Deleted Successfully')
   res.redirect('/campgrounds')
 }
