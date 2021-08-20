@@ -13,13 +13,20 @@ const ejsMate = require('ejs-mate')
 const ExpressError = require('./utility/ExpressError')
 const passport = require('passport')
 const LocalStrategy = require('passport-local')
-const User = require('./models/user')
+const mongoSanitize = require('express-mongo-sanitize');
+const helmet = require('helmet')
+const MongoStore = require("connect-mongo")
 
+const User = require('./models/user')
 const campgroundRoutes = require('./routes/campgrounds')
 const reviewRoutes = require('./routes/reviews')
 const userRoutes = require('./routes/users')
+const { contentSecurityPolicy } = require('helmet')
 
-mongoose.connect('mongodb://localhost:27017/joy-camp', {
+const dbUrl = process.env.DB_URL || 'mongodb://localhost:27017/joy-camp'
+
+// 'mongodb://localhost:27017/joy-camp'
+mongoose.connect(dbUrl, {
   useNewUrlParser: true,
   useCreateIndex: true,
   useUnifiedTopology: true,
@@ -39,9 +46,26 @@ app.set('views', path.join(__dirname, 'views'))
 app.use(express.urlencoded({ extended: true }))
 app.use(methodOverride('_method'))
 app.use(express.static(path.join(__dirname, 'public')))
+app.use(mongoSanitize())
+
+const secret = process.env.SECRET || 'not!not!Secret'
+
+
+const store = MongoStore.create({
+    mongoUrl: dbUrl,
+    touchAfter: 24 * 60 * 60,
+    crypto: {
+        secret
+    }
+});
+
+store.on("error", function (e) {
+    console.log("SESSION STORE ERROR", e)
+})
 
 const sessionConfig = {
-  secret: 'not!not!Secret',
+  store, 
+  secret,
   resave: false,
   saveUninitialized: true,
   cookie: {
@@ -52,6 +76,7 @@ const sessionConfig = {
 }
 app.use(session(sessionConfig))
 app.use(flash())
+app.use(helmet({contentSecurityPolicy: false}))
 
 app.use(passport.initialize())
 app.use(passport.session())
@@ -82,4 +107,6 @@ app.use((err, req, res, next) => {
   res.status(statusCode).render('error', { err })
 })
 
-app.listen(8080, () => console.log('Listening to port 8080'))
+const port = process.env.PORT || 8080;
+
+app.listen(port, () => console.log('Listening to port 8080'))
